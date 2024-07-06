@@ -2,11 +2,11 @@
 # Makefile Options
 # ----------------------------
 
-NAME = lwIPDEMO
+NAME = Expanse
 ICON = icon.png
-DESCRIPTION = lwIP Networking Stack DEMO
+DESCRIPTION = Real-time Space Combat Simulator
 
-APP_NAME = lwIPDEMO
+APP_NAME = Expanse
 APP_VERSION = 0
 
 CFLAGS = -Wall -Wextra -Oz -I src/include
