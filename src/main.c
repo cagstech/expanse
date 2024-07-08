@@ -1,6 +1,4 @@
-#if ETH_DEBUG_FILE == LWIP_DBG_ON
 #include <string.h>
-#endif
 
 #include <usbdrvce.h>
 #include <ti/getcsc.h>
@@ -15,62 +13,104 @@
 #include "lwip/altcp_tcp.h"
 #include "lwip/altcp.h"
 #include "lwip/dhcp.h"
+#include "lwip/dns.h"
+
+#include "engines/conn.h"
 
 // connection initial configuration
-const altcp_allocator_t allocator = {altcp_tcp_alloc, NULL};
-const char *remote_host = "remote.titrek.us";
-const uint16_t remote_port = 51701;
 
-// netstate
-uint16_t struct _netstate
+#define HOSTNAME_MAX_LEN 128
+#define DEFAULT_PORT 51701
+
+// gamestate
+struct _gamestate
 {
-    struct netif *ethif;
-    ip_addr_t conn_addr;
-    struct altcp_pcb *conn;
+    struct _conn conn;
 };
-struct _netstate netstate;
+struct _gamestate gamestate = {0};
 
-void dns_found_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
+void dns_lookup_recv(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
 {
+    memcpy(&gamestate.conn.addr, ipaddr, sizeof(ip_addr_t));
+    if (altcp_connect(gamestate.conn.pcb, &gamestate.conn.addr, gamestate.conn.port, altcp_connected_callback))
+        printf("internal error, altcp_connect\n");
+    gamestate.conn.state = CONN_TCP_CONNECT;
 }
 
 void ethif_status_callback_fn(struct netif *netif)
 {
-    if (!dhcp_supplied_address(netif))
-        dhcp_start();
-    else if (dhcp_supplied_address(netif))
+    switch (gamestate.conn.state)
     {
+    case CONN_NONE:
+        dhcp_start(netif);
+        printf("starting dhcp_client\n");
+        gamestate.conn.state = CONN_AWAIT_DHCP;
+        break;
+    case CONN_AWAIT_DHCP:
+        if (dhcp_supplied_address(netif))
+        {
+            char hostname[HOSTNAME_MAX_LEN];
+            size_t s = 0;
+            printf("dhcp config complete\n");
+            os_GetStringInput("connect to: ", hostname, HOSTNAME_MAX_LEN);
+            printf("attempting dns lookup for %s\n", hostname);
+            if (ipaddr_aton(hostname, &gamestate.conn.addr))
+                goto altcp_start;
+            for (s = 0; s < strlen(hostname); s++)
+                if (hostname[s] == ':')
+                    break;
+            if (s == strlen(hostname))
+            {
+                printf("no port specified, using default\n");
+                gamestate.conn.port = DEFAULT_PORT;
+            }
+            else if (s < strlen(hostname))
+            {
+                hostname[s++] = 0;
+                for (; s < strlen(hostname); s++)
+                {
+                    if (hostname[s])
+                    {
+                        gamestate.conn.port *= 10;
+                        gamestate.conn.port += (hostname[s] - '0');
+                    }
+                    else
+                        break;
+                }
+                printf("port %u specified\n", gamestate.conn.port);
+                err_t dns_err = dns_gethostbyname(hostname, &gamestate.conn.addr, dns_lookup_recv, NULL);
+                if (dns_err == ERR_OK)
+                    printf("dns in cache\n");
+                else if (dns_err == ERR_ARG)
+                    printf("dns argument invalid\n");
+                gamestate.conn.state = CONN_TCP_CONNECT;
+            }
+        altcp_start:
+            if (altcp_connect(gamestate.conn.pcb, &gamestate.conn.addr, gamestate.conn.port, altcp_connected_callback))
+                printf("internal error, altcp_connect\n");
+            break;
+        }
+        break;
     }
 }
 
 int main(void)
 {
-<<<<<<< HEAD
     lwip_init();
-    gfx_Begin();
-    gfx_FillScreen(0);
+    os_ClrLCDFull();
+    os_HomeUp();
 
     // initialize altcp pcb
-    netstate.conn = altcp_new(&allocator);
-=======
-    uint8_t key;
-    gfx_Begin();
-    gfx_FillScreen(255);
-    lwip_init();
-
-#if ETH_DEBUG_FILE == LWIP_DBG_ON
-    eth_logger = fopen("lwiplogs", "a");
-    const char *search_string = ":tilogfile:lwIP:\n";
-    fwrite(search_string, strlen(search_string), 1, eth_logger);
-#endif
-    struct netif *ethif = NULL;
->>>>>>> 269194148a7de5472c9b6cdb46c6fb3943bdef09
+    gamestate.conn.pcb = altcp_new(&allocator);
+    altcp_arg(gamestate.conn.pcb, &gamestate);
+    altcp_err(gamestate.conn.pcb, altcp_err_callback);
 
     /* You should probably handle this function failing */
     if (usb_Init(eth_handle_usb_event, NULL, NULL, USB_DEFAULT_INIT_FLAGS))
         goto exit;
 
-    run_main = true;
+    bool run_main = true;
+    sk_key_t key;
 
     do
     {
@@ -82,26 +122,27 @@ int main(void)
         {
             run_main = false;
         }
-        if (ethif == NULL)
+        if (gamestate.conn.ethif == NULL)
         {
-            if ((ethif = netif_find("en0")))
+            if ((gamestate.conn.ethif = netif_find("en0")))
             {
                 // run this code if netif exists
                 // eg: dhcp_start(ethif);
-                netif_set_default(ethif);
-                netif_set_status_callback(ethif, ethif_status_callback_fn);
+                printf("if en0 registered\n");
+                netif_set_default(gamestate.conn.ethif);
+                netif_set_status_callback(gamestate.conn.ethif, ethif_status_callback_fn);
             }
         }
         usb_HandleEvents();   // usb events
         sys_check_timeouts(); // lwIP timers/event callbacks
     } while (run_main);
-    dhcp_release_and_stop(ethif);
+    dhcp_release_and_stop(gamestate.conn.ethif);
 exit:
-    netif_remove(ethif);
+    netif_remove(gamestate.conn.ethif);
 #if ETH_DEBUG_FILE == LWIP_DBG_ON
     fclose(eth_logger);
 #endif
     usb_Cleanup();
-    gfx_End();
+    // gfx_End();
     exit(0);
 }
