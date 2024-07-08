@@ -1,3 +1,6 @@
+#if ETH_DEBUG_FILE == LWIP_DBG_ON
+#include <string.h>
+#endif
 
 #include <usbdrvce.h>
 #include <ti/getcsc.h>
@@ -42,12 +45,26 @@ void ethif_status_callback_fn(struct netif *netif)
 
 int main(void)
 {
+<<<<<<< HEAD
     lwip_init();
     gfx_Begin();
     gfx_FillScreen(0);
 
     // initialize altcp pcb
     netstate.conn = altcp_new(&allocator);
+=======
+    uint8_t key;
+    gfx_Begin();
+    gfx_FillScreen(255);
+    lwip_init();
+
+#if ETH_DEBUG_FILE == LWIP_DBG_ON
+    eth_logger = fopen("lwiplogs", "a");
+    const char *search_string = ":tilogfile:lwIP:\n";
+    fwrite(search_string, strlen(search_string), 1, eth_logger);
+#endif
+    struct netif *ethif = NULL;
+>>>>>>> 269194148a7de5472c9b6cdb46c6fb3943bdef09
 
     /* You should probably handle this function failing */
     if (usb_Init(eth_handle_usb_event, NULL, NULL, USB_DEFAULT_INIT_FLAGS))
@@ -71,7 +88,7 @@ int main(void)
             {
                 // run this code if netif exists
                 // eg: dhcp_start(ethif);
-                printf("en0 registered\n");
+                netif_set_default(ethif);
                 netif_set_status_callback(ethif, ethif_status_callback_fn);
             }
         }
@@ -80,6 +97,11 @@ int main(void)
     } while (run_main);
     dhcp_release_and_stop(ethif);
 exit:
+    netif_remove(ethif);
+#if ETH_DEBUG_FILE == LWIP_DBG_ON
+    fclose(eth_logger);
+#endif
     usb_Cleanup();
+    gfx_End();
     exit(0);
 }

@@ -13,10 +13,16 @@
 #include "lwip/err.h"
 #include "lwip/netif.h"
 
-#define CDC_USB_MAXRETRIES 3
+#define USB_CDC_MAX_RETRIES 3
 
 /* Ethernet MTU - ECM & NCM */
 #define ETHERNET_MTU 1518
+
+/* Interrupt buffer size */
+#define INTERRUPT_RX_MAX 64
+
+/* NCM rx ntb size */
+#define NCM_RX_NTB_MAX_SIZE 2048
 
 /* USB CDC Ethernet Device Classes */
 #define USB_ECM_SUBCLASS 0x06
@@ -133,41 +139,42 @@ struct _ncm
 };
 
 // usb device metadata
-#define INTERRUPT_RX_MAX 64
 typedef struct _eth_device_t
 {
   usb_device_t device;
   uint8_t type;
   uint8_t hwaddr[6];
+  struct
+  {
+    usb_endpoint_t endpoint;
+    usb_error_t (*callback)(usb_endpoint_t endpoint, usb_transfer_status_t status,
+                            size_t transferred, usb_transfer_data_t *data);
+    uint8_t buf[NCM_RX_NTB_MAX_SIZE];
+  } rx;
+  struct
+  {
+    usb_endpoint_t endpoint;
+    err_t (*emit)(struct netif *netif, struct pbuf *p);
+  } tx;
+  struct
+  {
+    usb_endpoint_t endpoint;
+    uint8_t buf[INTERRUPT_RX_MAX];
+  } interrupt;
   union
   {
     struct _ncm ncm;
     struct _ecm ecm;
   } class;
-  struct
-  {
-    usb_endpoint_t in, out, interrupt;
-  } endpoint;
-  err_t (*process)(struct netif *netif, uint8_t *buf, size_t len);
-  err_t (*emit)(struct netif *netif, struct pbuf *p);
   struct netif iface;
-  uint8_t interrupt_rx_buf[INTERRUPT_RX_MAX];
-  uint8_t bulk_rx_buf[ETHERNET_MTU];
 } eth_device_t;
 extern eth_device_t eth;
 
-usb_error_t bulk_transmit_callback(usb_endpoint_t endpoint,
-                                   usb_transfer_status_t status,
-                                   size_t transferred,
-                                   usb_transfer_data_t *data);
-
-err_t ecm_process(struct netif *netif, uint8_t *buf, size_t len);
-err_t ecm_bulk_transmit(struct netif *netif, struct pbuf *p);
-usb_error_t ncm_control_setup(eth_device_t *eth);
-err_t ncm_process(struct netif *netif, uint8_t *buf, size_t len);
-err_t ncm_bulk_transmit(struct netif *netif, struct pbuf *p);
-
 usb_error_t eth_handle_usb_event(usb_event_t event, void *event_data,
                                  usb_callback_data_t *callback_data);
+
+#if ETH_DEBUG_FILE == LWIP_DBG_ON
+extern FILE *eth_logger;
+#endif
 
 #endif
