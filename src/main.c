@@ -15,25 +15,29 @@
 #include "lwip/dhcp.h"
 #include "lwip/dns.h"
 
-#include "engines/conn.h"
+#include "components/helpers/conn.h"
+#include "components/helpers/splash.h"
+#include "components/helpers/gamestate.h"
 
 // connection initial configuration
 
-#define HOSTNAME_MAX_LEN 128
+#define HOSTNAME_MAX_LEN 64
 #define DEFAULT_PORT 51701
 
 // gamestate
-struct _gamestate
-{
-    struct _conn conn;
-};
+
 struct _gamestate gamestate = {0};
 
 void dns_lookup_recv(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
 {
+    char sprintf_output_string[HOSTNAME_MAX_LEN * 2];
     memcpy(&gamestate.conn.addr, ipaddr, sizeof(ip_addr_t));
+    sprintf(sprintf_output_string, "altcp_connect ip=%s port=%u",
+            ipaddr_ntoa(&gamestate.conn.addr),
+            gamestate.conn.port);
+    gfx_SplashOutline(sprintf_output_string);
     if (altcp_connect(gamestate.conn.pcb, &gamestate.conn.addr, gamestate.conn.port, altcp_connected_callback))
-        printf("internal error, altcp_connect\n");
+        gfx_SplashOutline("altcp_connect fatal error");
     gamestate.conn.state = CONN_TCP_CONNECT;
 }
 
@@ -43,7 +47,7 @@ void ethif_status_callback_fn(struct netif *netif)
     {
     case CONN_NONE:
         dhcp_start(netif);
-        printf("starting dhcp_client\n");
+        gfx_SplashOutline("initiating dhcp_client");
         gamestate.conn.state = CONN_AWAIT_DHCP;
         break;
     case CONN_AWAIT_DHCP:
@@ -51,19 +55,17 @@ void ethif_status_callback_fn(struct netif *netif)
         {
             char hostname[HOSTNAME_MAX_LEN];
             size_t s = 0;
-            printf("dhcp config complete\n");
+            char sprintf_output_string[HOSTNAME_MAX_LEN * 2];
+            sprintf(sprintf_output_string, "dhcp address=%s", ipaddr_ntoa(netif_ip4_addr(netif)));
+            gfx_SplashOutline(sprintf_output_string);
             os_GetStringInput("connect to: ", hostname, HOSTNAME_MAX_LEN);
-            printf("attempting dns lookup for %s\n", hostname);
             if (ipaddr_aton(hostname, &gamestate.conn.addr))
                 goto altcp_start;
             for (s = 0; s < strlen(hostname); s++)
                 if (hostname[s] == ':')
                     break;
             if (s == strlen(hostname))
-            {
-                printf("no port specified, using default\n");
                 gamestate.conn.port = DEFAULT_PORT;
-            }
             else if (s < strlen(hostname))
             {
                 hostname[s++] = 0;
@@ -77,17 +79,27 @@ void ethif_status_callback_fn(struct netif *netif)
                     else
                         break;
                 }
-                printf("port %u specified\n", gamestate.conn.port);
+                sprintf(sprintf_output_string, "dns_lookup host=%s", hostname);
+                gfx_SplashOutline(sprintf_output_string);
                 err_t dns_err = dns_gethostbyname(hostname, &gamestate.conn.addr, dns_lookup_recv, NULL);
                 if (dns_err == ERR_OK)
-                    printf("dns in cache\n");
-                else if (dns_err == ERR_ARG)
-                    printf("dns argument invalid\n");
+                    goto altcp_start;
+                else if (dns_err == ERR_INPROGRESS)
+                    break;
+                else
+                {
+                    gfx_SplashOutline("dns_gethostbyname fatal error");
+                    break;
+                }
                 gamestate.conn.state = CONN_TCP_CONNECT;
             }
         altcp_start:
+            sprintf(sprintf_output_string, "altcp_connect ip=%s port=%u",
+                    ipaddr_ntoa(&gamestate.conn.addr),
+                    gamestate.conn.port);
+            gfx_SplashOutline(sprintf_output_string);
             if (altcp_connect(gamestate.conn.pcb, &gamestate.conn.addr, gamestate.conn.port, altcp_connected_callback))
-                printf("internal error, altcp_connect\n");
+                gfx_SplashOutline("altcp_connect fatal error");
             break;
         }
         break;
@@ -97,8 +109,13 @@ void ethif_status_callback_fn(struct netif *netif)
 int main(void)
 {
     lwip_init();
-    os_ClrLCDFull();
-    os_HomeUp();
+    gfx_Begin();
+    gfx_SetTextBGColor(1);
+    gfx_SetTextTransparentColor(1);
+    gfx_SetDrawBuffer();
+
+    gfx_SetTextFGColor(191);
+    splash_RenderStarfield();
 
     // initialize altcp pcb
     gamestate.conn.pcb = altcp_new(&allocator);
@@ -128,7 +145,7 @@ int main(void)
             {
                 // run this code if netif exists
                 // eg: dhcp_start(ethif);
-                printf("if en0 registered\n");
+                gfx_SplashOutline("network if registered");
                 netif_set_default(gamestate.conn.ethif);
                 netif_set_status_callback(gamestate.conn.ethif, ethif_status_callback_fn);
             }
@@ -143,6 +160,6 @@ exit:
     fclose(eth_logger);
 #endif
     usb_Cleanup();
-    // gfx_End();
+    gfx_End();
     exit(0);
 }
