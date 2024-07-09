@@ -18,6 +18,7 @@
 #include "components/helpers/conn.h"
 #include "components/helpers/splash.h"
 #include "components/helpers/gamestate.h"
+#include "components/asm/asm.h"
 
 // connection initial configuration
 
@@ -35,9 +36,9 @@ void dns_lookup_recv(const char *name, const ip_addr_t *ipaddr, void *callback_a
     sprintf(sprintf_output_string, "altcp_connect ip=%s port=%u",
             ipaddr_ntoa(&gamestate.conn.addr),
             gamestate.conn.port);
-    gfx_SplashOutline(sprintf_output_string);
+    splash_ConsolePrintLine(sprintf_output_string);
     if (altcp_connect(gamestate.conn.pcb, &gamestate.conn.addr, gamestate.conn.port, altcp_connected_callback))
-        gfx_SplashOutline("altcp_connect fatal error");
+        splash_ConsolePrintLine("altcp_connect fatal error");
     gamestate.conn.state = CONN_TCP_CONNECT;
 }
 
@@ -47,7 +48,7 @@ void ethif_status_callback_fn(struct netif *netif)
     {
     case CONN_NONE:
         dhcp_start(netif);
-        gfx_SplashOutline("initiating dhcp_client");
+        splash_ConsolePrintLine("initiating dhcp_client");
         gamestate.conn.state = CONN_AWAIT_DHCP;
         break;
     case CONN_AWAIT_DHCP:
@@ -57,8 +58,13 @@ void ethif_status_callback_fn(struct netif *netif)
             size_t s = 0;
             char sprintf_output_string[HOSTNAME_MAX_LEN * 2];
             sprintf(sprintf_output_string, "dhcp address=%s", ipaddr_ntoa(netif_ip4_addr(netif)));
-            gfx_SplashOutline(sprintf_output_string);
-            os_GetStringInput("connect to: ", hostname, HOSTNAME_MAX_LEN);
+            splash_ConsolePrintLine(sprintf_output_string);
+            splash_ConsoleClearLine();
+#define HOSTNAME_INPUT_X 10
+#define HOSTNAME_INPUT_Y 210 + 12
+            gfx_SetTextXY(HOSTNAME_INPUT_X, HOSTNAME_INPUT_Y);
+            user_input(hostname, HOSTNAME_MAX_LEN, 0);
+            splash_ConsolePrintLine("hostname input done");
             if (ipaddr_aton(hostname, &gamestate.conn.addr))
                 goto altcp_start;
             for (s = 0; s < strlen(hostname); s++)
@@ -80,7 +86,7 @@ void ethif_status_callback_fn(struct netif *netif)
                         break;
                 }
                 sprintf(sprintf_output_string, "dns_lookup host=%s", hostname);
-                gfx_SplashOutline(sprintf_output_string);
+                splash_ConsolePrintLine(sprintf_output_string);
                 err_t dns_err = dns_gethostbyname(hostname, &gamestate.conn.addr, dns_lookup_recv, NULL);
                 if (dns_err == ERR_OK)
                     goto altcp_start;
@@ -88,7 +94,7 @@ void ethif_status_callback_fn(struct netif *netif)
                     break;
                 else
                 {
-                    gfx_SplashOutline("dns_gethostbyname fatal error");
+                    splash_ConsolePrintLine("dns_gethostbyname fatal error");
                     break;
                 }
                 gamestate.conn.state = CONN_TCP_CONNECT;
@@ -97,9 +103,9 @@ void ethif_status_callback_fn(struct netif *netif)
             sprintf(sprintf_output_string, "altcp_connect ip=%s port=%u",
                     ipaddr_ntoa(&gamestate.conn.addr),
                     gamestate.conn.port);
-            gfx_SplashOutline(sprintf_output_string);
+            splash_ConsolePrintLine(sprintf_output_string);
             if (altcp_connect(gamestate.conn.pcb, &gamestate.conn.addr, gamestate.conn.port, altcp_connected_callback))
-                gfx_SplashOutline("altcp_connect fatal error");
+                splash_ConsolePrintLine("altcp_connect fatal error");
             break;
         }
         break;
@@ -145,7 +151,7 @@ int main(void)
             {
                 // run this code if netif exists
                 // eg: dhcp_start(ethif);
-                gfx_SplashOutline("network if registered");
+                splash_ConsolePrintLine("network if registered");
                 netif_set_default(gamestate.conn.ethif);
                 netif_set_status_callback(gamestate.conn.ethif, ethif_status_callback_fn);
             }
