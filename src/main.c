@@ -163,9 +163,6 @@ int main(void)
     dhcp_release_and_stop(gamestate.conn.ethif);
 exit:
     netif_remove(gamestate.conn.ethif);
-#if ETH_DEBUG_FILE == LWIP_DBG_ON
-    fclose(eth_logger);
-#endif
     usb_Cleanup();
     gfx_End();
     exit(0);

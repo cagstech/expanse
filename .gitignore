@@ -1,5 +1,11 @@
 obj
 bin
 .vscode
+<<<<<<< HEAD
 *.code-workspace
 *.xcworkspace
+=======
+*.fsdata
+*.xcworkspace
+*.code-workspace
+>>>>>>> lwip/master
