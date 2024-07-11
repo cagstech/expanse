@@ -114,6 +114,7 @@ void ethif_status_callback_fn(struct netif *netif)
 
 int main(void)
 {
+    sk_key_t key;
     lwip_init();
     gfx_Begin();
     gfx_SetTextBGColor(1);
